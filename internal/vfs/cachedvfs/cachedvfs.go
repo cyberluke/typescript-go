@@ -15,8 +15,14 @@ type FS struct {
 	directoryExistsCache      collections.SyncMap[string, bool]
 	fileExistsCache           collections.SyncMap[string, bool]
 	getAccessibleEntriesCache collections.SyncMap[string, vfs.Entries]
+	readFileCache             collections.SyncMap[string, readFileCacheEntry]
 	realpathCache             collections.SyncMap[string, string]
 	statCache                 collections.SyncMap[string, vfs.FileInfo]
+}
+
+type readFileCacheEntry struct {
+	contents string
+	ok       bool
 }
 
 var _ vfs.FS = (*FS)(nil)
@@ -41,6 +47,7 @@ func (fsys *FS) ClearCache() {
 	fsys.directoryExistsCache.Clear()
 	fsys.fileExistsCache.Clear()
 	fsys.getAccessibleEntriesCache.Clear()
+	fsys.readFileCache.Clear()
 	fsys.realpathCache.Clear()
 	fsys.statCache.Clear()
 }
@@ -94,7 +101,22 @@ func (fsys *FS) GetAccessibleEntries(path string) vfs.Entries {
 }
 
 func (fsys *FS) ReadFile(path string) (contents string, ok bool) {
-	return fsys.fs.ReadFile(path)
+	if fsys.enabled.Load() {
+		if ret, hit := fsys.readFileCache.Load(path); hit {
+			return ret.contents, ret.ok
+		}
+	}
+
+	contents, ok = fsys.fs.ReadFile(path)
+
+	if fsys.enabled.Load() {
+		fsys.readFileCache.Store(path, readFileCacheEntry{
+			contents: contents,
+			ok:       ok,
+		})
+	}
+
+	return contents, ok
 }
 
 func (fsys *FS) Realpath(path string) string {
