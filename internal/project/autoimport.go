@@ -13,7 +13,7 @@ import (
 )
 
 type autoImportBuilderFS struct {
-	snapshotFSBuilder *snapshotFSBuilder
+	snapshotFSBuilder *SnapshotFSBuilder
 	untrackedFiles    collections.SyncMap[tspath.Path, FileHandle]
 }
 
@@ -79,7 +79,7 @@ var _ autoimport.RegistryCloneHost = (*autoImportRegistryCloneHost)(nil)
 func newAutoImportRegistryCloneHost(
 	projectCollection *ProjectCollection,
 	parseCache *ParseCache,
-	snapshotFSBuilder *snapshotFSBuilder,
+	snapshotFSBuilder *SnapshotFSBuilder,
 	currentDirectory string,
 	toPath func(fileName string) tspath.Path,
 ) *autoImportRegistryCloneHost {

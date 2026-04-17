@@ -87,7 +87,7 @@ func (c *compilerHost) GetResolvedProjectReference(fileName string, path tspath.
 	} else {
 		// acquireConfigForProject will bypass sourceFS, so track the file here.
 		c.sourceFS.Track(fileName)
-		return c.builder.configFileRegistryBuilder.acquireConfigForProject(fileName, path, c.project, c.logger)
+		return c.builder.ConfigFileRegistryBuilder.acquireConfigForProject(fileName, path, c.project, c.logger)
 	}
 }
 

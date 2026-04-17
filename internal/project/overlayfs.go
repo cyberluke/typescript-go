@@ -68,14 +68,14 @@ func (f *fileBase) ECMALineInfo() *sourcemap.ECMALineInfo {
 	return f.lineInfo
 }
 
-type diskFile struct {
+type DiskFile struct {
 	fileBase
 	needsReload  bool
 	realpathPath tspath.Path
 }
 
-func newDiskFile(fileName string, content string) *diskFile {
-	return &diskFile{
+func newDiskFile(fileName string, content string) *DiskFile {
+	return &DiskFile{
 		fileBase: fileBase{
 			fileName: fileName,
 			content:  content,
@@ -84,26 +84,26 @@ func newDiskFile(fileName string, content string) *diskFile {
 	}
 }
 
-var _ FileHandle = (*diskFile)(nil)
+var _ FileHandle = (*DiskFile)(nil)
 
-func (f *diskFile) Version() int32 {
+func (f *DiskFile) Version() int32 {
 	return 0
 }
 
-func (f *diskFile) MatchesDiskText() bool {
+func (f *DiskFile) MatchesDiskText() bool {
 	return !f.needsReload
 }
 
-func (f *diskFile) IsOverlay() bool {
+func (f *DiskFile) IsOverlay() bool {
 	return false
 }
 
-func (f *diskFile) Kind() core.ScriptKind {
+func (f *DiskFile) Kind() core.ScriptKind {
 	return core.GetScriptKindFromFileName(f.fileName)
 }
 
-func (f *diskFile) Clone() *diskFile {
-	return &diskFile{
+func (f *DiskFile) Clone() *DiskFile {
+	return &DiskFile{
 		realpathPath: f.realpathPath,
 		fileBase: fileBase{
 			fileName: f.fileName,

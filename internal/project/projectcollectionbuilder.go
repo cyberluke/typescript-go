@@ -18,13 +18,13 @@ import (
 	"github.com/microsoft/typescript-go/internal/tspath"
 )
 
-type projectLoadKind int
+type ProjectLoadKind int
 
 const (
 	// Project is not created or updated, only looked up in cache
-	projectLoadKindFind projectLoadKind = iota
+	ProjectLoadKindFind ProjectLoadKind = iota
 	// Project is created and then its graph is updated
-	projectLoadKindCreate
+	ProjectLoadKindCreate
 )
 
 type ProjectCollectionBuilder struct {
@@ -34,10 +34,10 @@ type ProjectCollectionBuilder struct {
 	toPath              func(fileName string) tspath.Path
 
 	ctx                                context.Context
-	fs                                 *snapshotFSBuilder
+	fs                                 *SnapshotFSBuilder
 	base                               *ProjectCollection
 	compilerOptionsForInferredProjects *core.CompilerOptions
-	configFileRegistryBuilder          *configFileRegistryBuilder
+	ConfigFileRegistryBuilder          *ConfigFileRegistryBuilder
 
 	client Client // optional; used for project loading notifications
 
@@ -56,7 +56,7 @@ type ProjectCollectionBuilder struct {
 func newProjectCollectionBuilder(
 	ctx context.Context,
 	newSnapshotID uint64,
-	fs *snapshotFSBuilder,
+	fs *SnapshotFSBuilder,
 	oldProjectCollection *ProjectCollection,
 	oldConfigFileRegistry *ConfigFileRegistry,
 	oldAPIState APIState,
@@ -76,7 +76,7 @@ func newProjectCollectionBuilder(
 		parseCache:                         parseCache,
 		extendedConfigCache:                extendedConfigCache,
 		base:                               oldProjectCollection,
-		configFileRegistryBuilder:          newConfigFileRegistryBuilder(lsproto.GetClientCapabilities(ctx).Workspace.DidChangeWatchedFiles.RelativePatternSupport, fs, oldConfigFileRegistry, extendedConfigCache, newSnapshotID, sessionOptions, customConfigFileName, nil),
+		ConfigFileRegistryBuilder:          NewConfigFileRegistryBuilder(lsproto.GetClientCapabilities(ctx).Workspace.DidChangeWatchedFiles.RelativePatternSupport, fs, oldConfigFileRegistry, extendedConfigCache, newSnapshotID, sessionOptions, customConfigFileName, nil),
 		newSnapshotID:                      newSnapshotID,
 		configuredProjects:                 dirty.NewSyncMap(oldProjectCollection.configuredProjects),
 		inferredProject:                    dirty.NewBox(oldProjectCollection.inferredProject),
@@ -115,7 +115,7 @@ func (b *ProjectCollectionBuilder) Finalize(logger *logging.LogTree) (*ProjectCo
 		newProjectCollection.inferredProject = newInferredProject
 	}
 
-	configFileRegistry := b.configFileRegistryBuilder.Finalize()
+	configFileRegistry := b.ConfigFileRegistryBuilder.Finalize()
 	if configFileRegistry != b.base.configFileRegistry {
 		ensureCloned()
 		newProjectCollection.configFileRegistry = configFileRegistry
@@ -164,7 +164,7 @@ func (b *ProjectCollectionBuilder) HandleAPIRequest(apiRequest *APISnapshotReque
 	if apiRequest.OpenProjects != nil {
 		for configFileName := range apiRequest.OpenProjects.Keys() {
 			configPath := b.toPath(configFileName)
-			if entry := b.findOrCreateProject(configFileName, configPath, projectLoadKindCreate, logger); entry != nil {
+			if entry := b.findOrCreateProject(configFileName, configPath, ProjectLoadKindCreate, logger); entry != nil {
 				if b.apiState.openProjects == nil {
 					b.apiState.openProjects = make(map[tspath.Path]int)
 				}
@@ -262,7 +262,7 @@ func (b *ProjectCollectionBuilder) DidChangeFiles(summary FileChangeSummary, log
 	}
 
 	configChangeLogger := logger.Fork("Checking for changes affecting config files")
-	configChangeResult := b.configFileRegistryBuilder.DidChangeFiles(summary, configChangeLogger)
+	configChangeResult := b.ConfigFileRegistryBuilder.DidChangeFiles(summary, configChangeLogger)
 	logChangeFileResult(configChangeResult, configChangeLogger)
 
 	b.programStructureChanged = b.markProjectsAffectedByConfigChanges(configChangeResult, logger)
@@ -363,8 +363,8 @@ func (b *ProjectCollectionBuilder) cleanupConfiguredProjects(retain *collections
 		retainProjectAndReferences(project)
 
 		// Retain all the ancestor projects
-		b.configFileRegistryBuilder.forEachConfigFileNameFor(openFilePath, func(configFileName string) {
-			if ancestor := b.findOrCreateProject(configFileName, b.toPath(configFileName), projectLoadKindFind, logger); ancestor != nil {
+		b.ConfigFileRegistryBuilder.forEachConfigFileNameFor(openFilePath, func(configFileName string) {
+			if ancestor := b.findOrCreateProject(configFileName, b.toPath(configFileName), ProjectLoadKindFind, logger); ancestor != nil {
 				retainProjectAndReferences(ancestor.Value())
 			}
 		})
@@ -405,7 +405,7 @@ func (b *ProjectCollectionBuilder) cleanupConfiguredProjects(retain *collections
 		}
 	}
 	b.updateInferredProjectRoots(inferredProjectFiles, logger)
-	b.configFileRegistryBuilder.Cleanup()
+	b.ConfigFileRegistryBuilder.Cleanup()
 }
 
 func logChangeFileResult(result changeFileResult, logger *logging.LogTree) {
@@ -618,7 +618,7 @@ func (b *ProjectCollectionBuilder) ensureProjectTree(
 			}
 
 			// Load this child project since this is referenced
-			childProjectEntry := b.findOrCreateProject(childConfig.ConfigName(), childConfig.ConfigFile.SourceFile.Path(), projectLoadKindCreate, logger)
+			childProjectEntry := b.findOrCreateProject(childConfig.ConfigName(), childConfig.ConfigFile.SourceFile.Path(), ProjectLoadKindCreate, logger)
 			b.updateProgram(childProjectEntry, logger)
 
 			// Ensure children for this project
@@ -674,7 +674,7 @@ func (b *ProjectCollectionBuilder) DidUpdateATAState(ataChanges map[tspath.Path]
 
 // if customConfigFileName changes, invalidate default projects.
 func (b *ProjectCollectionBuilder) DidChangeCustomConfigFileName(logger *logging.LogTree) {
-	if !b.configFileRegistryBuilder.DidChangeCustomConfigFileName(logger) {
+	if !b.ConfigFileRegistryBuilder.DidChangeCustomConfigFileName(logger) {
 		return
 	}
 
@@ -753,7 +753,7 @@ func (b *ProjectCollectionBuilder) findDefaultConfiguredProject(fileName string,
 	})
 
 	if multipleCandidates {
-		if p := b.findOrCreateDefaultConfiguredProjectForFile(fileName, path, projectLoadKindFind, nil).project; p != nil {
+		if p := b.findOrCreateDefaultConfiguredProjectForFile(fileName, path, ProjectLoadKindFind, nil).project; p != nil {
 			return p
 		}
 	}
@@ -762,7 +762,7 @@ func (b *ProjectCollectionBuilder) findDefaultConfiguredProject(fileName string,
 }
 
 func (b *ProjectCollectionBuilder) ensureConfiguredProjectAndAncestorsForFile(fileName string, path tspath.Path, logger *logging.LogTree) searchResult {
-	result := b.findOrCreateDefaultConfiguredProjectForFile(fileName, path, projectLoadKindCreate, logger)
+	result := b.findOrCreateDefaultConfiguredProjectForFile(fileName, path, ProjectLoadKindCreate, logger)
 	if result.project != nil && b.fs.isOpenFile(path) {
 		b.createAncestorTree(fileName, path, &result, logger)
 	}
@@ -780,14 +780,14 @@ func (b *ProjectCollectionBuilder) createAncestorTree(fileName string, path tspa
 		}
 
 		// Get config file name
-		ancestorConfigName := b.configFileRegistryBuilder.getAncestorConfigFileName(fileName, path, project.configFileName, logger)
+		ancestorConfigName := b.ConfigFileRegistryBuilder.GetAncestorConfigFileName(fileName, path, project.configFileName, logger)
 		if ancestorConfigName == "" {
 			return
 		}
 
 		// find or delay load the project
 		ancestorPath := b.toPath(ancestorConfigName)
-		ancestor := b.findOrCreateProject(ancestorConfigName, ancestorPath, projectLoadKindCreate, logger)
+		ancestor := b.findOrCreateProject(ancestorConfigName, ancestorPath, ProjectLoadKindCreate, logger)
 		if ancestor == nil {
 			return
 		}
@@ -810,13 +810,13 @@ func (b *ProjectCollectionBuilder) createAncestorTree(fileName string, path tspa
 
 type searchNode struct {
 	configFileName string
-	loadKind       projectLoadKind
+	loadKind       ProjectLoadKind
 	logger         *logging.LogTree
 }
 
 type searchNodeKey struct {
 	configFileName string
-	loadKind       projectLoadKind
+	loadKind       ProjectLoadKind
 }
 
 type searchResult struct {
@@ -828,7 +828,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectWorker(
 	fileName string,
 	path tspath.Path,
 	configFileName string,
-	loadKind projectLoadKind,
+	loadKind ProjectLoadKind,
 	visited *collections.SyncSet[searchNodeKey],
 	fallback *searchResult,
 	logger *logging.LogTree,
@@ -844,7 +844,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectWorker(
 			if config, ok := configs.Load(b.toPath(node.configFileName)); ok && len(config.ProjectReferences()) > 0 {
 				referenceLoadKind := node.loadKind
 				if config.CompilerOptions().DisableReferencedProjectLoad.IsTrue() {
-					referenceLoadKind = projectLoadKindFind
+					referenceLoadKind = ProjectLoadKindFind
 				}
 
 				var refLogger *logging.LogTree
@@ -860,7 +860,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectWorker(
 		},
 		func(node searchNode) (isResult bool, stop bool) {
 			configFilePath := b.toPath(node.configFileName)
-			config := b.configFileRegistryBuilder.findOrAcquireConfigForFile(node.configFileName, configFilePath, path, node.loadKind, node.logger.Fork("Acquiring config for open file"))
+			config := b.ConfigFileRegistryBuilder.FindOrAcquireConfigForFile(node.configFileName, configFilePath, path, node.loadKind, node.logger.Fork("Acquiring config for open file"))
 			if config == nil {
 				node.logger.Log("Config file for project does not already exist")
 				return false, false
@@ -888,7 +888,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectWorker(
 				return false, false
 			}
 
-			if node.loadKind == projectLoadKindCreate {
+			if node.loadKind == ProjectLoadKindCreate {
 				// Ensure project is up to date before checking for file inclusion
 				b.updateProgram(project, node.logger)
 			}
@@ -908,7 +908,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectWorker(
 			Visited: visited,
 			PreprocessLevel: func(level *core.BreadthFirstSearchLevel[searchNodeKey, searchNode]) {
 				level.Range(func(node searchNode) bool {
-					if node.loadKind == projectLoadKindFind && level.Has(searchNodeKey{configFileName: node.configFileName, loadKind: projectLoadKindCreate}) {
+					if node.loadKind == ProjectLoadKindFind && level.Has(searchNodeKey{configFileName: node.configFileName, loadKind: ProjectLoadKindCreate}) {
 						// Remove find requests when a create request for the same project is already present.
 						level.Delete(searchNodeKey{configFileName: node.configFileName, loadKind: node.loadKind})
 					}
@@ -958,7 +958,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectWorker(
 			return *fallback
 		}
 	}
-	if ancestorConfigName := b.configFileRegistryBuilder.getAncestorConfigFileName(fileName, path, configFileName, logger); ancestorConfigName != "" {
+	if ancestorConfigName := b.ConfigFileRegistryBuilder.GetAncestorConfigFileName(fileName, path, configFileName, logger); ancestorConfigName != "" {
 		return b.findOrCreateDefaultConfiguredProjectWorker(
 			fileName,
 			path,
@@ -985,7 +985,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectWorker(
 func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectForFile(
 	fileName string,
 	path tspath.Path,
-	loadKind projectLoadKind,
+	loadKind ProjectLoadKind,
 	logger *logging.LogTree,
 ) searchResult {
 	if key, ok := b.fileDefaultProjects[path]; ok {
@@ -996,7 +996,7 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectForFile(
 		entry, _ := b.configuredProjects.Load(key)
 		return searchResult{project: entry}
 	}
-	if configFileName := b.configFileRegistryBuilder.getConfigFileNameForFile(fileName, path, logger); configFileName != "" {
+	if configFileName := b.ConfigFileRegistryBuilder.getConfigFileNameForFile(fileName, path, logger); configFileName != "" {
 		startTime := time.Now()
 		result := b.findOrCreateDefaultConfiguredProjectWorker(
 			fileName,
@@ -1029,10 +1029,10 @@ func (b *ProjectCollectionBuilder) findOrCreateDefaultConfiguredProjectForFile(
 func (b *ProjectCollectionBuilder) findOrCreateProject(
 	configFileName string,
 	configFilePath tspath.Path,
-	loadKind projectLoadKind,
+	loadKind ProjectLoadKind,
 	logger *logging.LogTree,
 ) *dirty.SyncMapEntry[tspath.Path, *Project] {
-	if loadKind == projectLoadKindFind {
+	if loadKind == ProjectLoadKindFind {
 		entry, _ := b.configuredProjects.Load(configFilePath)
 		return entry
 	}
@@ -1094,7 +1094,7 @@ func (b *ProjectCollectionBuilder) updateProgram(entry dirty.Value[*Project], lo
 	var displayName string
 	entry.Locked(func(entry dirty.Value[*Project]) {
 		if entry.Value().Kind == KindConfigured {
-			commandLine := b.configFileRegistryBuilder.acquireConfigForProject(
+			commandLine := b.ConfigFileRegistryBuilder.acquireConfigForProject(
 				entry.Value().configFileName,
 				entry.Value().configFilePath,
 				entry.Value(),
@@ -1227,11 +1227,11 @@ func (b *ProjectCollectionBuilder) deleteConfiguredProject(project dirty.Value[*
 	}
 	if program := project.Value().Program; program != nil {
 		program.RangeResolvedProjectReference(func(referencePath tspath.Path, config *tsoptions.ParsedCommandLine, _ *tsoptions.ParsedCommandLine, _ int) bool {
-			b.configFileRegistryBuilder.releaseConfigForProject(referencePath, projectPath)
+			b.ConfigFileRegistryBuilder.releaseConfigForProject(referencePath, projectPath)
 			return true
 		})
 	}
-	b.configFileRegistryBuilder.releaseConfigForProject(projectPath, projectPath)
+	b.ConfigFileRegistryBuilder.releaseConfigForProject(projectPath, projectPath)
 	project.Delete()
 }
 
@@ -1252,7 +1252,7 @@ func (b *ProjectCollectionBuilder) releaseDroppedProjectReferences(oldProgram *c
 	}
 	oldProgram.RangeResolvedProjectReference(func(referencePath tspath.Path, _ *tsoptions.ParsedCommandLine, _ *tsoptions.ParsedCommandLine, _ int) bool {
 		if !newReferences.Has(referencePath) {
-			b.configFileRegistryBuilder.releaseConfigForProject(referencePath, projectPath)
+			b.ConfigFileRegistryBuilder.releaseConfigForProject(referencePath, projectPath)
 		}
 		return true
 	})
